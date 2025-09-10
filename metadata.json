@@ -1,0 +1,5 @@
+{
+  "name": "infragrid",
+  "description": "A navigable front-end prototype for the Infragrid pole management system, featuring simulated data, interactive GIS, and asset management modules.",
+  "requestFramePermissions": []
+}
