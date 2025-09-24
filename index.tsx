@@ -1,155 +1,181 @@
-import React, { useState, useEffect, useMemo } from 'react';
+
+
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createClient } from '@supabase/supabase-js';
+import L from 'leaflet';
 
 // ===================================================================================
-// DADOS SIMULADOS (MOCK DATA) - ESTRUTURA ATUALIZADA
+// CONFIGURAÇÕES GLOBAIS - EDITE AQUI
 // ===================================================================================
+const supabaseUrl = 'https://euxmgmmukjadphccqdvb.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV1eG1nbW11a2phZHBoY2NxZHZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1MTY0MzQsImV4cCI6MjA3MzA5MjQzNH0.WgCtJPVby7gVa132lwpNAnrETlYpiFM0imU8qS8jP2s';
 
-const generateMockData = (count) => {
-    const postes = [];
-    const detalhes = [];
-    const ocupacao = [];
-    const mun = ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte', 'Salvador'];
-    const sitAtiv = ['ATIVO', 'INATIVO', 'PROJETADO', 'RETIRADO'];
-    const tipUnid = ['Poste de Concreto DT', 'Poste de Concreto CC', 'Poste de Madeira', 'Poste Metálico'];
+// Instância única do cliente Supabase para evitar múltiplas conexões.
+const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
-    for (let i = 1; i <= count; i++) {
-        const codId = 1000 + i;
-        const municipio = mun[i % mun.length];
-        
-        // Tabela Postes
-        postes.push({
-            COD_ID: codId,
-            X: -23.5505 + (Math.random() - 0.5) * 0.1,
-            Y: -46.6333 + (Math.random() - 0.5) * 0.1,
-            OBJECTID: 10000 + i,
-            DIST: Math.floor(Math.random() * 100),
-            FAS_CON: 'ABC',
-            SIT_ATIV: sitAtiv[i % sitAtiv.length],
-            TIP_UNID: tipUnid[i % tipUnid.length],
-            POT_NOM: '15', // kVA
-            PAC_1: `PAC1-${i}`,
-            PAC_2: `PAC2-${i}`,
-            CTMT: `CTMT-${Math.floor(i/10)}`,
-            UNI_TR_AT: 12345 + i,
-            SUB: `SUB-${i % 5}`,
-            CONJ: i % 10,
-            MUN: municipio,
-            DAT_CON: `202${Math.floor(i % 5)}/01/15`,
-            BANC: i % 3,
-            POS: 'C',
-            DESCR: `Descrição do poste ${codId}`,
-            ARE_LOC: 'URBANA',
-        });
-
-        // Tabela Detalhes_Postes
-        detalhes.push({
-            COD_ID: codId,
-            P_N_OPE: `OP-${i}`,
-            CAP_ELO: `${i % 3 + 1} Elos`,
-            COR_NOM: '200A',
-            TLCD: i % 2, // 0 ou 1
-            DAT_CON: `202${Math.floor(i % 5)}/02/20`,
-            CTMT: `CTMT-${Math.floor(i/10)}`,
-            UNI_TR_AT: 12345 + i,
-            SUB: `SUB-${i % 5}`,
-            CONJ: i % 10,
-            MUN: municipio,
-            DESCR: `Detalhes técnicos do poste ${codId}`,
-            ARE_LOC: 'URBANA',
-        });
-        
-        // Tabela Telecom_Ocupacao
-        if (i % 2 === 0) {
-            ocupacao.push({
-                COD_ID: codId,
-                PN_CON_1: `ISP-${i % 7 + 1}`,
-                PN_CON_2: 2000 + i,
-                CTAT: 3000 + i,
-                CT_COD_OP: `OP-TELECOM-${i % 7 + 1}`,
-                SITCONT: i % 3 === 0 ? 'REGULAR' : 'PENDENTE',
-                COMP: 'Fibra Óptica',
-                DESCR: 'Cabo de fibra óptica para distribuição FTTH.'
-            });
-            if (i % 4 === 0) {
-                 ocupacao.push({
-                    COD_ID: codId,
-                    PN_CON_1: `ISP-${i % 5 + 2}`,
-                    PN_CON_2: 4000 + i,
-                    CTAT: 5000 + i,
-                    CT_COD_OP: `OP-TELECOM-${i % 5 + 2}`,
-                    SITCONT: 'IRREGULAR',
-                    COMP: 'Cabo Coaxial',
-                    DESCR: 'Cabo coaxial legado.'
-                });
-            }
-        }
-    }
-    return { postes, detalhes, ocupacao };
+const UF_COORDINATES = {
+    'AC': { center: [-9.0238, -70.812], zoom: 7 }, 'AL': { center: [-9.5713, -36.782], zoom: 8 },
+    'AP': { center: [1.4149, -51.769], zoom: 7 },  'AM': { center: [-3.4168, -65.856], zoom: 6 },
+    'BA': { center: [-12.9714, -41.2909], zoom: 7 },'CE': { center: [-5.201, -39.5333], zoom: 8 },
+    'DF': { center: [-15.7942, -47.8825], zoom: 9 },'ES': { center: [-19.1834, -40.3089], zoom: 8 },
+    'GO': { center: [-15.827, -49.8362], zoom: 7 },  'MA': { center: [-5.4244, -45.4428], zoom: 7 },
+    'MT': { center: [-12.6819, -56.9219], zoom: 6 },'MS': { center: [-20.3876, -54.4045], zoom: 7 },
+    'MG': { center: [-18.5122, -44.555], zoom: 7 },  'PA': { center: [-1.9998, -54.2879], zoom: 6 },
+    'PB': { center: [-7.0926, -36.7819], zoom: 8 }, 'PR': { center: [-25.2521, -52.0215], zoom: 7 },
+    'PE': { center: [-8.381, -37.848], zoom: 8 },   'PI': { center: [-7.7183, -42.7289], zoom: 7 },
+    'RJ': { center: [-22.9068, -43.1729], zoom: 8 },'RN': { center: [-5.7945, -36.9541], zoom: 8 },
+    'RS': { center: [-30.0346, -53.1604], zoom: 7 },'RO': { center: [-10.8306, -63.3412], zoom: 7 },
+    'RR': { center: [2.737, -61.222], zoom: 7 },   'SC': { center: [-27.2423, -50.2189], zoom: 8 },
+    'SP': { center: [-22.25, -48.75], zoom: 7 },     'SE': { center: [-10.9472, -37.0731], zoom: 9 },
+    'TO': { center: [-10.1753, -48.2982], zoom: 7 }
 };
 
-const { postes: tabelaPostes, detalhes: tabelaDetalhesPostes, ocupacao: tabelaTelecomOcupacao } = generateMockData(150);
+const ASSET_TABLE_NAMES = {
+    POSTES: 'dados_cosern',
+    SEGMENTOS_AT: 'a00000020_SSDAT',
+    TRANSFORMADORES_AT: 'a00000034_UNTRAT',
+    TRANSFORMADORES_MT: 'a00000033_UNTRMT',
+    SECCIONADORES_AT: 'a0000002f_UNSEAT'
+};
 
 // ===================================================================================
 // ÍCONES SVG
 // ===================================================================================
-
-const Icon = ({ path }) => (
-    <svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em">
-        <path d={path}></path>
-    </svg>
-);
-
+const Icon = ({ path, className = "" }) => ( <svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em" className={className}><path d={path}></path></svg> );
 const ICONS = {
     dashboard: "M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z",
     gis: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
     assets: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8h5z",
-    commercial: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z",
+    network: "M12 3C7.03 3 3 7.03 3 12s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm-1 15v-4H9v-2h2V8h2v4h2v2h-2v4h-2z",
+    admin: "M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69-.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19-.15-.24-.42.12-.64l2 3.46c.12-.22.39-.3.61-.22l2.49 1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49.42l-.38-2.65c.61-.25 1.17-.59-1.69-.98l2.49 1c.23.09.49 0 .61.22l2-3.46c.12-.22-.07.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z",
+    chevronLeft: "M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z",
+    chevronRight: "M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z",
+    info: "M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z",
+    alert: "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+    layers: "M11.99 18.54l-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27-7.38 5.74zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27L12 16z",
+    business: "M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z",
     comms: "M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z",
-    admin: "M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59-1.69-.98l2.49 1c.23.09.49 0 .61.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"
+    edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
+    delete: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+    close: "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
 };
 
+// FIX: Moved data hooks before components that use them to resolve declaration-before-use errors.
+// ===================================================================================
+// HOOKS DE DADOS
+// ===================================================================================
+const useSupabase = () => {
+    return supabase; // Retorna a instância única e global do cliente
+};
+
+interface FetchDataOptions {
+    select?: string;
+    filters?: { column: string; value: any }[];
+}
+
+function useFetchData(tableName: string, options: FetchDataOptions = {}) {
+    const supabase = useSupabase();
+    const [data, setData] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const fetchData = useCallback(async () => {
+        if (!supabase || !tableName) {
+            setError({ message: "Cliente Supabase ou nome da tabela não fornecido."});
+            setIsLoading(false);
+            return;
+        }
+        setIsLoading(true);
+        setError(null);
+        setData([]); // Limpa os dados antigos para evitar inconsistências durante o carregamento
+        try {
+            let query = supabase.from(tableName).select(options.select || '*');
+            
+            if (options.filters && options.filters.length > 0) {
+                options.filters.forEach(filter => {
+                    if(filter && filter.column && filter.value) {
+                       query = query.eq(filter.column, filter.value);
+                    }
+                });
+            }
+
+            const { data, error } = await query;
+
+            if (error) throw error;
+            setData(data);
+        // FIX: Explicitly type 'err' as 'any' to resolve 'Cannot find name' error in catch block.
+        } catch (err: any) {
+            setError(err);
+            console.error(`Erro ao buscar dados da tabela ${tableName}:`, err);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [supabase, tableName, options.select, JSON.stringify(options.filters)]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    return { data, isLoading, error, refetch: fetchData };
+}
+
+function useFetchRpc(functionName: string, params?: object) {
+    const supabase = useSupabase();
+    const [data, setData] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const fetchData = useCallback(async () => {
+        if (!supabase || !functionName) {
+            setError({ message: "Cliente Supabase ou nome da função não fornecido." });
+            setIsLoading(false);
+            return;
+        }
+        setIsLoading(true);
+        setError(null);
+        setData([]);
+
+        try {
+            const { data, error } = await supabase.rpc(functionName, params || {});
+
+            if (error) throw error;
+            setData(data || []); // Ensure data is always an array
+        // FIX: Explicitly type 'err' as 'any' to resolve 'Cannot find name' error in catch block.
+        } catch (err: any) {
+            setError(err);
+            console.error(`Erro ao chamar a função ${functionName}:`, err);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [supabase, functionName, JSON.stringify(params)]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    return { data, isLoading, error, refetch: fetchData };
+}
 
 // ===================================================================================
-// COMPONENTES REUTILIZÁVEIS
+// COMPONENTES REUTILÍVEIS
 // ===================================================================================
 
-const Card = ({ title, children }: { title?: any, children: any }) => (
-    <div className="card">
+const Card = ({ title, children, className="" }: React.PropsWithChildren<{ title?: any; className?: string; }>) => (
+    <div className={`card ${className}`}>
         {title && <h4 className="card-title">{title}</h4>}
         {children}
     </div>
 );
 
-const StatCard = ({ value, label }) => (
-    <Card>
-        <div className="stat-card-value">{value}</div>
-        <div className="stat-card-label">{label}</div>
-    </Card>
-);
-
-const Modal = ({ title, isOpen, onClose, children }) => {
-    if (!isOpen) return null;
-    return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
-                <div className="modal-header">
-                    <h4>{title}</h4>
-                    <button onClick={onClose} className="modal-close-btn">&times;</button>
-                </div>
-                {children}
-            </div>
-        </div>
-    );
-};
-
-const Table = ({ columns, data, onRowClick, clickable = false }: { columns: any, data: any, onRowClick?: any, clickable?: boolean }) => {
+const Table = ({ columns, data, onEdit, onDelete, onRowClick, onLinkClick, columnLinks, isLoading, error }: { columns: any; data: any; onEdit?: (row: any) => void; onDelete?: (row: any) => void; onRowClick?: (row: any) => void; onLinkClick?: (config: any, value: any) => void; columnLinks?: any; isLoading?: boolean; error?: any; }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 10;
 
     const filteredData = useMemo(() => 
-        data.filter(item => 
+        (data || []).filter(item => 
             Object.values(item).some(val => 
                 String(val).toLowerCase().includes(searchTerm.toLowerCase())
             )
@@ -157,420 +183,982 @@ const Table = ({ columns, data, onRowClick, clickable = false }: { columns: any,
 
     const paginatedData = useMemo(() => 
         filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage),
-        [filteredData, currentPage]
-    );
-    
+        [filteredData, currentPage, itemsPerPage]);
+
     const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
+    const handlePageChange = (newPage) => {
+        if (newPage >= 1 && newPage <= totalPages) {
+            setCurrentPage(newPage);
+        }
+    };
+
+    const tableColumns = [...columns];
+    if (onEdit || onDelete) {
+        tableColumns.push({
+            Header: 'Ações',
+            accessor: 'actions',
+            Cell: (row) => (
+                <div className="actions-cell">
+                    {onEdit && <button onClick={(e) => { e.stopPropagation(); onEdit(row); }} className="action-btn btn-edit"><Icon path={ICONS.edit} /></button>}
+                    {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(row); }} className="action-btn btn-delete"><Icon path={ICONS.delete} /></button>}
+                </div>
+            )
+        });
+    }
+
+    if (isLoading) return <LoadingSpinner message="Carregando dados da tabela..." />;
+    if (error) return <ErrorMessage title="Erro ao carregar tabela" errorObj={error} />;
+
     return (
-        <Card>
+        <div>
             <div className="table-controls">
-                <input 
-                    type="text" 
-                    placeholder="Pesquisar na tabela..."
+                <input
+                    type="text"
+                    placeholder="Buscar em todos os campos..."
                     className="search-input"
                     value={searchTerm}
-                    onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                    onChange={e => setSearchTerm(e.target.value)}
                 />
-                <div className="pagination-controls">
-                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Anterior</button>
-                    <span>Página {currentPage} de {totalPages}</span>
-                    <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Próxima</button>
-                </div>
             </div>
             <div className="table-container">
                 <table className="table">
                     <thead>
-                        <tr>{columns.map(col => <th key={col.key}>{col.header}</th>)}</tr>
+                        <tr>
+                            {tableColumns.map(col => <th key={col.accessor}>{col.Header}</th>)}
+                        </tr>
                     </thead>
                     <tbody>
-                        {paginatedData.map((row, index) => (
-                            <tr key={index} onClick={() => onRowClick && onRowClick(row)} className={clickable ? 'clickable' : ''}>
-                                {columns.map(col => <td key={col.key}>{row[col.key]}</td>)}
+                        {paginatedData.map((row, i) => (
+                            <tr key={row.id || row.OBJECTID || i} className={onRowClick ? 'clickable' : ''} onClick={() => onRowClick && onRowClick(row)}>
+                                {tableColumns.map(col => (
+                                    <td key={col.accessor} data-label={col.Header}>
+                                        {col.Cell ? col.Cell(row) : 
+                                         (columnLinks && columnLinks[col.accessor] && onLinkClick) ? 
+                                            <a href="#" className="cell-link" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onLinkClick(columnLinks[col.accessor], row[col.accessor]); }}>{row[col.accessor]}</a>
+                                            : row[col.accessor]}
+                                    </td>
+                                ))}
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-        </Card>
-    );
-};
-
-
-const Tabs = ({ items }) => {
-    const [activeTab, setActiveTab] = useState(0);
-    return (
-        <div>
-            <nav className="tabs-nav">
-                {items.map((item, index) => (
-                    <button 
-                        key={index}
-                        className={`tab-button ${activeTab === index ? 'active' : ''}`}
-                        onClick={() => setActiveTab(index)}
-                    >
-                        {item.label}
-                    </button>
-                ))}
-            </nav>
-            <div className="tab-content">
-                {items[activeTab].content}
+            <div className="pagination-controls">
+                <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1}>
+                    <Icon path={ICONS.chevronLeft} />
+                </button>
+                <span>Página {currentPage} de {totalPages}</span>
+                <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages}>
+                    <Icon path={ICONS.chevronRight} />
+                </button>
             </div>
         </div>
     );
 };
 
+const LoadingSpinner = ({ message = "Carregando..." }: { message?: string }) => (
+    <div className="loading-spinner">
+        <div className="spinner"></div>
+        <span>{message}</span>
+    </div>
+);
 
-// ===================================================================================
-// COMPONENTES DE LAYOUT
-// ===================================================================================
+const ErrorMessage = ({ title, message, errorObj }: { title: string; message?: string; errorObj?: any; }) => {
+    let detailedMessage = message || errorObj?.message || 'Ocorreu um erro desconhecido.';
+    let details = errorObj?.details;
+    let hint = errorObj?.hint;
 
-const menuConfig = [
-    { name: "Dashboard", path: "dashboard", icon: ICONS.dashboard, submenus: [
-        { name: "Visão Geral", path: "visao-geral" },
-        { name: "Visão Financeira", path: "visao-financeira" },
-        { name: "Alertas Pendentes", path: "alertas-pendentes" },
-    ]},
-    { name: "Módulo GIS", path: "gis", icon: ICONS.gis, submenus: [
-        { name: "Mapa Interativo", path: "mapa-interativo" },
-        { name: "Gestão de Camadas", path: "gestao-camadas" },
-        { name: "Análise de Dados", path: "analise-dados" },
-    ]},
-    { name: "Gestão de Ativos", path: "ativos", icon: ICONS.assets, submenus: [
-        { name: "Inventário de Postes", path: "inventario" },
-        { name: "Análise de Risco", path: "risco" },
-    ]},
-    { name: "Gestão Comercial", path: "comercial", icon: ICONS.commercial, submenus: [
-        { name: "Exploração Comercial", path: "exploracao" },
-        { name: "Alertas Gerais", path: "alertas" },
-        { name: "Novos Negócios", path: "negocios" },
-    ]},
-    { name: "Comunicação e Regul.", path: "comunicacao", icon: ICONS.comms, submenus: [
-        { name: "Regularização de ISPs", path: "regularizacao" },
-        { name: "Leilão de Excedentes", path: "leilao" },
-    ]},
-    { name: "Configurações", path: "config", icon: ICONS.admin, submenus: [
-        { name: "Usuários e Permissões", path: "usuarios" },
-        { name: "Dados e Integração", path: "integracao" },
-        { name: "Empresa", path: "empresa" },
-        { name: "Gestão de Contratos", path: "contratos" },
-    ]},
-    { name: "Relatórios", path: "relatorios", icon: ICONS.dashboard, submenus: [
-        { name: "Inadimplência", path: "inadimplencia" },
-        { name: "Ocupação", path: "ocupacao" },
-        { name: "Personalizados", path: "personalizados" },
-    ]},
-];
+    if (errorObj instanceof TypeError && errorObj.message.includes('Failed to fetch')) {
+        detailedMessage = "Não foi possível conectar ao servidor. Isso pode ser um problema de rede ou uma configuração de CORS no seu projeto Supabase.";
+        details = "Verifique sua conexão com a internet e certifique-se de que o domínio da aplicação está liberado nas configurações de CORS do Supabase (Project Settings > API > CORS configuration).";
+        hint = "Para desenvolvimento, você pode adicionar '*' como um padrão permitido, mas use um domínio específico em produção.";
+    }
 
-const Header = ({ currentPath, navigateTo }) => {
-    const activeModule = currentPath.split('/')[0];
-    
-    const handleNavClick = (e, path) => {
-        e.preventDefault();
-        navigateTo(path);
+    return (
+        <div className="error-message">
+            <h4><Icon path={ICONS.alert} /> {title}</h4>
+            <p>{detailedMessage}</p>
+            {details && <p><small>Detalhes: {details}</small></p>}
+            {hint && <p><small>Dica: {hint}</small></p>}
+        </div>
+    );
+};
+
+const FullPageLoader = ({ message }) => (
+    <div className="full-page-loader">
+        <LoadingSpinner message={message} />
+    </div>
+);
+
+const ConfigError = ({ error }) => (
+    <div className="config-error-container">
+        <h3><Icon path={ICONS.alert} /> Erro de Configuração</h3>
+        <p>A aplicação não pôde ser iniciada. Isso geralmente ocorre por uma de duas razões:</p>
+        <ol style={{textAlign: 'left', margin: '1.5rem auto', maxWidth: '600px'}}>
+            <li>As credenciais do Supabase (<code>supabaseUrl</code> ou <code>supabaseAnonKey</code>) estão incorretas ou não foram definidas.</li>
+            <li>As políticas de segurança de acesso (RLS) não foram configuradas para as tabelas no Supabase, impedindo a leitura dos dados.</li>
+        </ol>
+        <p>Por favor, verifique o arquivo <code>README.md</code> para as instruções de configuração.</p>
+        <div className="error-details">
+            <strong>Mensagem do Erro:</strong>
+            <pre>{error.message}</pre>
+        </div>
+    </div>
+);
+
+const Modal = ({ isOpen, onClose, title, children }: React.PropsWithChildren<{ isOpen: boolean; onClose: () => void; title: string }>) => {
+    if (!isOpen) return null;
+    return (
+        <div className="modal-backdrop" onClick={onClose}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                    <h4>{title}</h4>
+                    <button onClick={onClose} className="action-btn"><Icon path={ICONS.close}/></button>
+                </div>
+                <div className="modal-body">
+                    {children}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const AssetForm = ({ asset, columns, tableName, onSave, onCancel }: { asset?: any; columns: any[]; tableName: string; onSave: () => void; onCancel: () => void; }) => {
+    const supabase = useSupabase();
+    const [formData, setFormData] = useState(() => {
+        const initialState = {};
+        columns.forEach(col => {
+            initialState[col.accessor] = asset ? asset[col.accessor] ?? '' : '';
+        });
+        return initialState;
+    });
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    return (
-        <header className="app-header">
-            <div className="header-logo">
-                <h1>Infragrid</h1>
-            </div>
-            <nav className="header-nav">
-                <ul>
-                    {menuConfig.map(item => (
-                         <li key={item.path} className={activeModule === item.path ? 'active' : ''}>
-                             <a href="#" onClick={(e) => handleNavClick(e, `${item.path}/${item.submenus[0].path}`)}>
-                                <Icon path={item.icon} />
-                                <span>{item.name}</span>
-                            </a>
-                         </li>
-                    ))}
-                </ul>
-            </nav>
-        </header>
-    );
-};
-
-const SecondarySidebar = ({ currentPath, navigateTo }) => {
-    const activeModulePath = currentPath.split('/')[0];
-    const activeModule = menuConfig.find(m => m.path === activeModulePath);
-
-    if (!activeModule) return null;
-
-    const handleNavClick = (e, path) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        navigateTo(path);
-    };
-
-    return (
-        <aside className="secondary-sidebar">
-            <h3 className="secondary-sidebar-title">{activeModule.name}</h3>
-            <nav className="secondary-sidebar-nav">
-                <ul>
-                    {activeModule.submenus.map(sub => (
-                        <li key={sub.path} className={currentPath === `${activeModule.path}/${sub.path}` ? 'active' : ''}>
-                            <a href="#" onClick={(e) => handleNavClick(e, `${activeModule.path}/${sub.path}`)}>
-                                {sub.name}
-                            </a>
-                        </li>
-                    ))}
-                </ul>
-            </nav>
-        </aside>
-    );
-};
-
-const Layout = ({ children, currentPath, navigateTo }) => (
-    <div className="app-layout">
-        <Header currentPath={currentPath} navigateTo={navigateTo} />
-        <div className="app-body">
-            <SecondarySidebar currentPath={currentPath} navigateTo={navigateTo} />
-            <main className="main-content">
-                <div className="content-area">{children}</div>
-            </main>
-        </div>
-    </div>
-);
+        setIsSaving(true);
+        setError('');
+        
+        const submissionData = { ...formData };
+        const nonEditableKeys = ['id', 'geom', 'objectid', 'shape_length', 'actions', 'OBJECTID', 'Latitude', 'Longitude'];
+        nonEditableKeys.forEach(key => delete submissionData[key]);
 
 
-// ===================================================================================
-// PÁGINAS E MÓDULOS
-// ===================================================================================
+        try {
+            let response;
+            const idKey = asset?.id ? 'id' : 'OBJECTID';
+            const idValue = asset?.[idKey];
 
-const PageHeader = ({title, subtitle}: {title: any, subtitle?: any}) => (
-    <div className="page-header">
-        <h3>{title}</h3>
-        {subtitle && <p>{subtitle}</p>}
-    </div>
-);
+            if (asset && idValue) { 
+                response = await supabase.from(tableName).update(submissionData).eq(idKey, idValue);
+            } else { 
+                response = await supabase.from(tableName).insert([submissionData]).select();
+            }
 
-const PlaceholderPage = ({ title, subtitle }: { title: any, subtitle?: any }) => (
-    <div>
-        <PageHeader title={title} subtitle={subtitle || "Funcionalidade em desenvolvimento."} />
-        <Card>
-            <p>Esta é uma página de demonstração para a seção "{title}". O conteúdo e as funcionalidades completas serão implementados em fases futuras do projeto.</p>
-        </Card>
-    </div>
-);
-
-// --- Dashboard ---
-const DashboardVisaoGeral = () => {
-    const postesOcupados = tabelaPostes.filter(p => tabelaTelecomOcupacao.some(o => o.COD_ID === p.COD_ID)).length;
-    return (
-        <div>
-            <PageHeader title="Visão Geral" subtitle="Resumo das principais métricas da plataforma." />
-            <div className="dashboard-grid">
-                <StatCard value={tabelaPostes.length} label="Total de Postes" />
-                <StatCard value={postesOcupados} label="Postes Ocupados" />
-                <StatCard value={tabelaPostes.length - postesOcupados} label="Postes Disponíveis" />
-                <StatCard value="15" label="Contratos a Vencer" />
-                <Card title="Ocupação por ISP">
-                   <div className="chart-container" style={{display:'flex', alignItems:'center', justifyContent:'center'}}>Gráfico de Pizza</div>
-                </Card>
-                <Card title="Receita Mensal (Estimada)">
-                   <div className="chart-container" style={{display:'flex', alignItems:'center', justifyContent:'center'}}>Gráfico de Barras</div>
-                </Card>
-            </div>
-        </div>
-    );
-};
-
-// --- GIS ---
-const GisMapaInterativo = () => {
-    const [selectedPoste, setSelectedPoste] = useState(null);
-    const postesVisiveis = tabelaPostes.slice(0, 20); // Limita para performance
-
-    const handlePoleClick = (poste) => {
-        const detalhes = tabelaDetalhesPostes.find(d => d.COD_ID === poste.COD_ID) || {};
-        setSelectedPoste({...poste, ...detalhes});
+            if (response.error) {
+                throw response.error;
+            }
+            onSave();
+        } catch (err: any) {
+            console.error("Erro ao salvar o ativo:", err);
+            setError(`Falha ao salvar: ${err.message}`);
+        } finally {
+            setIsSaving(false);
+        }
     };
     
+    const editableColumns = columns.filter(c => !['id', 'geom', 'objectid', 'shape_length', 'actions', 'OBJECTID', 'COD_ID'].includes(c.accessor));
+
     return (
-        <div>
-            <PageHeader title="Mapa Interativo" subtitle="Visualize os postes geograficamente."/>
+        <form onSubmit={handleSubmit} className="asset-form">
+            {editableColumns.map(col => (
+                <div className="form-group" key={col.accessor}>
+                    <label htmlFor={col.accessor}>{col.Header}</label>
+                    <input
+                        type="text"
+                        id={col.accessor}
+                        name={col.accessor}
+                        value={formData[col.accessor] || ''}
+                        onChange={handleChange}
+                        disabled={isSaving}
+                    />
+                </div>
+            ))}
+            {error && <p className="form-error">{error}</p>}
+            <div className="modal-footer">
+                <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>
+                <button type="submit" className="btn-primary" disabled={isSaving}>
+                    {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+            </div>
+        </form>
+    );
+};
+
+
+// ===================================================================================
+// COMPONENTES DE MÓDULO (PÁGINAS)
+// ===================================================================================
+const SideMapPanel = ({ asset, isOpen, onClose }) => {
+    const mapRef = useRef(null);
+    const markerRef = useRef(null);
+
+    useEffect(() => {
+        if (isOpen && !mapRef.current) {
+            mapRef.current = L.map('side-map-instance', {
+                zoomControl: false,
+                attributionControl: false
+            });
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapRef.current);
+        }
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (isOpen && mapRef.current && asset) {
+            let coordinates;
+            // Handle GeoJSON points from PostGIS
+            if (asset.geom && asset.geom.type === 'Point') {
+                coordinates = [asset.geom.coordinates[1], asset.geom.coordinates[0]];
+            // Handle Latitude/Longitude columns from dados_cosern
+            } else if (asset.Latitude && asset.Longitude) {
+                coordinates = [asset.Latitude, asset.Longitude];
+            } else {
+                return; // Not enough data to show on map
+            }
+
+            mapRef.current.setView(coordinates, 18);
+            
+            if(markerRef.current) {
+                mapRef.current.removeLayer(markerRef.current);
+            }
+
+            const pulsatingIcon = L.divIcon({
+                className: 'pulsating-marker',
+                iconSize: [20, 20]
+            });
+
+            markerRef.current = L.marker(coordinates, { icon: pulsatingIcon }).addTo(mapRef.current);
+            
+            setTimeout(() => {
+                 mapRef.current.invalidateSize();
+            }, 300);
+        }
+    }, [asset, isOpen]);
+
+    return (
+        <div className={`side-map-panel-backdrop ${isOpen ? 'open' : ''}`} onClick={onClose}>
+            <div className={`side-map-panel ${isOpen ? 'open' : ''}`} onClick={e => e.stopPropagation()}>
+                <button onClick={onClose} className="side-map-close-btn"><Icon path={ICONS.close} /></button>
+                <div id="side-map-instance" className="map-container-side"></div>
+                {asset && <div className="side-map-info"><h4>{asset.COD_ID || asset.cod_id || `ID: ${asset.OBJECTID || asset.id}`}</h4></div>}
+            </div>
+        </div>
+    );
+};
+
+const DashboardModule = ({ onSelectAssetForMap }) => {
+    const { data: untratData, isLoading: l1, error: e1 } = useFetchData(ASSET_TABLE_NAMES.TRANSFORMADORES_AT);
+    const { data: untrmtData, isLoading: l2, error: e2 } = useFetchData(ASSET_TABLE_NAMES.TRANSFORMADORES_MT);
+    const { data: ssdatData, isLoading: l3, error: e3 } = useFetchData(ASSET_TABLE_NAMES.SEGMENTOS_AT);
+    const { data: unseatData, isLoading: l4, error: e4 } = useFetchData(ASSET_TABLE_NAMES.SECCIONADORES_AT);
+    const { data: postesData, isLoading: l5, error: e5 } = useFetchData(ASSET_TABLE_NAMES.POSTES);
+
+    const stats = useMemo(() => {
+        const totalRedeAT = (ssdatData || []).reduce((acc, curr) => acc + (curr.comp || 0), 0) / 1000; // em km
+        return {
+            totalTransformadoresAT: (untratData || []).length,
+            totalTransformadoresMT: (untrmtData || []).length,
+            totalSeccionadoresAT: (unseatData || []).length,
+            extensaoRedeAT: totalRedeAT.toFixed(2),
+            totalPostes: (postesData || []).length,
+        };
+    }, [untratData, untrmtData, ssdatData, unseatData, postesData]);
+
+    const isLoading = l1 || l2 || l3 || l4 || l5;
+    const error = e1 || e2 || e3 || e4 || e5;
+
+    if (isLoading) return <FullPageLoader message="Carregando dados do dashboard..." />;
+    if (error) return <ConfigError error={error} />;
+
+    return (
+        <div className="content-area">
+            <div className="page-header">
+                <div>
+                    <h3>Dashboard Operacional BDGD</h3>
+                    <p>Visão geral dos ativos da Base de Dados Geográfica da Distribuidora.</p>
+                </div>
+            </div>
+            <div className="dashboard-grid wide">
+                <Card><p className="stat-card-value">{stats.totalTransformadoresAT.toLocaleString()}</p><p className="stat-card-label">Transformadores de Alta Tensão</p></Card>
+                <Card><p className="stat-card-value">{stats.totalTransformadoresMT.toLocaleString()}</p><p className="stat-card-label">Transformadores de Média Tensão</p></Card>
+                <Card><p className="stat-card-value">{stats.totalSeccionadoresAT.toLocaleString()}</p><p className="stat-card-label">Seccionadores de Alta Tensão</p></Card>
+                <Card><p className="stat-card-value">{stats.extensaoRedeAT} <span style={{fontSize: '1.5rem'}}>km</span></p><p className="stat-card-label">Extensão da Rede de Alta Tensão</p></Card>
+                <Card><p className="stat-card-value">{stats.totalPostes.toLocaleString()}</p><p className="stat-card-label">Postes / Pontos Notáveis</p></Card>
+            </div>
+             <Card title="Últimos Transformadores de Alta Tensão Registrados" className="card-margin-top">
+                <Table
+                    columns={[
+                        { Header: 'Cód. ID', accessor: 'cod_id' },
+                        { Header: 'Subestação', accessor: 'sub' },
+                        { Header: 'Situação', accessor: 'sit_ativ' },
+                        { Header: 'Pot. Nominal (MVA)', accessor: 'pot_nom' },
+                        { Header: 'Município', accessor: 'mun' }
+                    ]}
+                    data={(untratData || []).slice(0, 100)}
+                    onRowClick={onSelectAssetForMap}
+                />
+            </Card>
+        </div>
+    );
+};
+
+// ===================================================================================
+// MÓDULO VISUALIZADOR GIS (ANEEL)
+// ===================================================================================
+
+const GisMap = ({ layersConfig }: { layersConfig: { [key: string]: any } }) => {
+    const mapRef = useRef(null);
+    const layerGroupRef = useRef(L.layerGroup());
+    const mapId = 'map-instance';
+
+    useEffect(() => {
+        let mapInstance = mapRef.current;
+        if (!mapInstance) {
+            mapInstance = L.map(mapId, {
+                center: [-15.793889, -47.882778], // Brasília
+                zoom: 5,
+            });
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(mapInstance);
+            layerGroupRef.current.addTo(mapInstance);
+            mapRef.current = mapInstance;
+        }
+
+        // FIX: Refactored map cleanup logic to use mapRef.current directly, ensuring the correct map instance is removed and avoiding potential type inference issues with the local `mapInstance` variable in the closure.
+        return () => {
+            if (mapRef.current) {
+                (mapRef.current as any).remove();
+                mapRef.current = null;
+            }
+        };
+    }, [mapId]);
+
+    useEffect(() => {
+        const layerGroup = layerGroupRef.current;
+        if (!layerGroup || !mapRef.current) return;
+
+        layerGroup.clearLayers();
+        const allBounds = L.latLngBounds();
+
+        Object.values(layersConfig).forEach(config => {
+            if (config.isVisible && config.data && config.data.length > 0) {
+                 const geoJsonLayer = L.geoJSON(null, {
+                    style: config.style,
+                    pointToLayer: (feature, latlng) => {
+                        return L.circleMarker(latlng, config.style);
+                    },
+                    onEachFeature: (feature, layer) => {
+                        if (feature.properties && feature.properties.popup) {
+                            layer.bindPopup(feature.properties.popup, { maxWidth: 400 });
+                        }
+                    }
+                });
+
+                const features = config.data
+                    .map(item => {
+                        let geometry = item.geom;
+                        if (!geometry && item.Latitude && item.Longitude) {
+                             geometry = { type: 'Point', coordinates: [item.Longitude, item.Latitude] };
+                        }
+                        if (!geometry || !geometry.coordinates || !geometry.type) return null;
+                        
+                        return {
+                            type: 'Feature',
+                            properties: { popup: config.popupContent(item) },
+                            geometry: geometry,
+                        };
+                    })
+                    .filter(Boolean);
+
+                if (features.length > 0) {
+                    geoJsonLayer.addData(features);
+                    layerGroup.addLayer(geoJsonLayer);
+                    try {
+                        const bounds = geoJsonLayer.getBounds();
+                        if (bounds && bounds.isValid()) {
+                            allBounds.extend(bounds);
+                        }
+                    } catch (e) {
+                        console.error("Error extending bounds for layer:", e);
+                    }
+                }
+            }
+        });
+
+        if (allBounds.isValid()) {
+            mapRef.current.fitBounds(allBounds, { padding: [50, 50], maxZoom: 16 });
+        }
+    }, [layersConfig]);
+
+    return <div id={mapId} style={{ height: '75vh', width: '100%', borderRadius: '8px' }} className="map-container"></div>;
+};
+
+const LayerControl = ({ layersConfig, onToggle }: { layersConfig: { [key: string]: any }, onToggle: (layerName: string) => void }) => (
+    <div className="map-layer-control">
+        <h4><Icon path={ICONS.layers} /> Camadas</h4>
+        {Object.entries(layersConfig).map(([layerName, config]) => (
+            <div key={layerName} className="layer-toggle">
+                <input
+                    type="checkbox"
+                    id={layerName}
+                    checked={config.isVisible}
+                    onChange={() => onToggle(layerName)}
+                />
+                <label htmlFor={layerName}>{layerName}</label>
+            </div>
+        ))}
+    </div>
+);
+
+
+const GisModule = () => {
+    const { data: untratData, isLoading: l1, error: e1 } = useFetchData(ASSET_TABLE_NAMES.TRANSFORMADORES_AT);
+    const { data: untrmtData, isLoading: l2, error: e2 } = useFetchData(ASSET_TABLE_NAMES.TRANSFORMADORES_MT);
+    const { data: ssdatData, isLoading: l3, error: e3 } = useFetchData(ASSET_TABLE_NAMES.SEGMENTOS_AT);
+    const { data: unseatData, isLoading: l4, error: e4 } = useFetchData(ASSET_TABLE_NAMES.SECCIONADORES_AT);
+    const { data: postesData, isLoading: l5, error: e5 } = useFetchData(ASSET_TABLE_NAMES.POSTES);
+
+    const initialLayersConfig = useMemo(() => ({
+        "Postes": {
+            data: postesData,
+            style: { radius: 5, fillColor: 'var(--info-color)', color: "#fff", weight: 1, opacity: 1, fillOpacity: 0.9 },
+            popupContent: (d) => `<h4>Ponto Notável (Poste)</h4><strong>Cód. ID:</strong> ${d.COD_ID}<br/><strong>Estrutura:</strong> ${d.ESTR}<br/><strong>Material:</strong> ${d.MAT}<br/><strong>Altura:</strong> ${d.ALT}<br/><strong>Sit. Contábil:</strong> ${d.SITCONT}`
+        },
+        "Rede de Alta Tensão": {
+            data: ssdatData,
+            style: { color: 'var(--danger-color)', weight: 3, opacity: 0.8 },
+            popupContent: (d) => `<h4>Segmento de Rede AT</h4><strong>Cód. ID:</strong> ${d.cod_id}<br/><strong>De:</strong> ${d.pn_con_1}<br/><strong>Para:</strong> ${d.pn_con_2}<br/><strong>Comprimento:</strong> ${d.comp}m<br/><strong>Fases:</strong> ${d.fas_con}`
+        },
+        "Transformadores AT": {
+            data: untratData,
+            style: { radius: 8, fillColor: '#c53030', color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9 },
+            popupContent: (d) => `<h4>Transformador AT</h4><strong>Cód. ID:</strong> ${d.cod_id}<br/><strong>Potência:</strong> ${d.pot_nom} MVA<br/><strong>Situação:</strong> ${d.sit_ativ}`
+        },
+        "Transformadores MT": {
+            data: untrmtData,
+            style: { radius: 6, fillColor: '#dd6b20', color: "#fff", weight: 1.5, opacity: 1, fillOpacity: 0.9 },
+            popupContent: (d) => `<h4>Transformador MT</h4><strong>Cód. ID:</strong> ${d.cod_id}<br/><strong>Potência:</strong> ${d.pot_nom} kVA<br/><strong>Posto:</strong> ${d.posto}`
+        },
+        "Seccionadores AT": {
+            data: unseatData,
+            style: { radius: 5, fillColor: '#3182ce', color: "#fff", weight: 1, opacity: 1, fillOpacity: 0.9, shape: 'square' },
+            popupContent: (d) => `<h4>Seccionador AT</h4><strong>Cód. ID:</strong> ${d.cod_id}<br/><strong>Tipo:</strong> ${d.tip_unid}<br/><strong>Operação:</strong> ${d.p_n_ope}`
+        }
+    }), [ssdatData, untratData, untrmtData, unseatData, postesData]);
+    
+    const [layersConfig, setLayersConfig] = useState(() => {
+        const initialState = {};
+        Object.keys(initialLayersConfig).forEach(name => {
+            initialState[name] = { ...initialLayersConfig[name], isVisible: false };
+        });
+        return initialState;
+    });
+    
+    useEffect(() => {
+       setLayersConfig(prev => {
+           const newState = {...prev};
+           Object.keys(initialLayersConfig).forEach(name => {
+               newState[name] = {...newState[name], ...initialLayersConfig[name]};
+           });
+           return newState;
+       })
+    }, [initialLayersConfig]);
+
+
+    const handleToggleLayer = (layerName) => {
+        setLayersConfig(prev => ({
+            ...prev,
+            [layerName]: { ...prev[layerName], isVisible: !prev[layerName].isVisible }
+        }));
+    };
+
+    const isLoading = l1 || l2 || l3 || l4 || l5;
+    const error = e1 || e2 || e3 || e4 || e5;
+
+    return (
+        <div className="content-area">
+            <div className="page-header">
+                <h3>Visualizador GIS (ANEEL BDGD)</h3>
+                <p>Camadas de dados geográficos da distribuidora.</p>
+            </div>
             <Card>
-                <div className="map-container">
-                    {postesVisiveis.map(p => (
-                        <div 
-                            key={p.COD_ID} 
-                            className="pole-icon" 
-                            style={{ 
-                                top: `${(1 - (p.X - (-23.6))) / 0.1 * 100}%`,
-                                left: `${(p.Y - (-46.6833)) / 0.1 * 100}%`
-                             }}
-                            onClick={() => handlePoleClick(p)}
-                            title={String(p.COD_ID)}
-                        ></div>
+                {isLoading && <FullPageLoader message="Carregando dados do mapa..." />}
+                {error && <ConfigError error={error} />}
+                {!isLoading && !error && (
+                    <div className="map-with-controls">
+                        <LayerControl layersConfig={layersConfig} onToggle={handleToggleLayer} />
+                        <GisMap layersConfig={layersConfig} />
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+};
+
+const RelatedSegments = ({ asset }) => {
+    const supabase = useSupabase();
+    const [segments, setSegments] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchSegments = async () => {
+            if (!asset || !asset.COD_ID || !supabase) return;
+            setIsLoading(true);
+            const { data, error } = await supabase
+                .from(ASSET_TABLE_NAMES.SEGMENTOS_AT)
+                .select('cod_id, ctat, comp, fas_con')
+                .or(`pn_con_1.eq.${asset.COD_ID},pn_con_2.eq.${asset.COD_ID}`);
+
+            if (error) {
+                console.error("Erro ao buscar segmentos relacionados:", error);
+            } else {
+                setSegments(data);
+            }
+            setIsLoading(false);
+        };
+        fetchSegments();
+    }, [asset, supabase]);
+
+    return (
+        <div className="related-data-section">
+            <h5 className="related-data-title">Segmentos de Rede Conectados</h5>
+            {isLoading ? <LoadingSpinner message="Buscando..." /> : (
+                segments.length > 0 ? (
+                    <ul className="related-data-list">
+                        {segments.map(seg => <li key={seg.cod_id}><strong>{seg.cod_id}</strong> ({seg.comp}m, {seg.fas_con})</li>)}
+                    </ul>
+                ) : <p>Nenhum segmento de rede conectado encontrado.</p>
+            )}
+        </div>
+    );
+};
+
+const AssetsModule = ({ onSelectAssetForMap, onNavigateToAsset, activeFilter, onFilterConsumed }) => {
+    const supabase = useSupabase();
+    const [activeTab, setActiveTab] = useState('postes');
+    const [modalState, setModalState] = useState({ isOpen: false, mode: 'add', asset: null, tableName: '', columns: [], refetch: () => {} });
+    const [localFilter, setLocalFilter] = useState(null);
+
+    useEffect(() => {
+      if (activeFilter) {
+        setActiveTab(activeFilter.tabId);
+        setLocalFilter([activeFilter.filter]);
+        onFilterConsumed();
+      }
+    }, [activeFilter, onFilterConsumed]);
+
+    const tabsConfig = useMemo(() => [
+      { id: 'postes', tableName: ASSET_TABLE_NAMES.POSTES, label: 'Postes', columns: [
+        {Header: 'Cód. ID', accessor: 'COD_ID'}, {Header: 'Estrutura', accessor: 'ESTR'}, {Header: 'Material', accessor: 'MAT'}, {Header: 'Altura', accessor: 'ALT'}, {Header: 'Sit. Contábil', accessor: 'SITCONT'}
+      ]},
+      { id: 'untrat', tableName: ASSET_TABLE_NAMES.TRANSFORMADORES_AT, label: 'Transformadores AT', columns: [
+        {Header: 'Cód. ID', accessor: 'cod_id'}, {Header: 'Subestação', accessor: 'sub'}, {Header: 'Potência (MVA)', accessor: 'pot_nom'}, {Header: 'Situação', accessor: 'sit_ativ'}
+      ]},
+      { id: 'untrmt', tableName: ASSET_TABLE_NAMES.TRANSFORMADORES_MT, label: 'Transformadores MT', columns: [
+        {Header: 'Cód. ID', accessor: 'cod_id'}, {Header: 'Circuito MT', accessor: 'ctmt'}, {Header: 'Potência (kVA)', accessor: 'pot_nom'}, {Header: 'Posto', accessor: 'posto'}
+      ]},
+      { id: 'ssdat', tableName: ASSET_TABLE_NAMES.SEGMENTOS_AT, label: 'Segmentos Rede AT', columns: [
+        {Header: 'Cód. ID', accessor: 'cod_id'}, {Header: 'Circuito AT', accessor: 'ctat'}, {Header: 'Comprimento (m)', accessor: 'comp'}, {Header: 'Fases', accessor: 'fas_con'}, {Header: 'Poste De', accessor: 'pn_con_1'}, {Header: 'Poste Para', accessor: 'pn_con_2'}
+      ]},
+      { id: 'unseat', tableName: ASSET_TABLE_NAMES.SECCIONADORES_AT, label: 'Seccionadores AT', columns: [
+        {Header: 'Cód. ID', accessor: 'cod_id'}, {Header: 'Tipo Unidade', accessor: 'tip_unid'}, {Header: 'Posição Normal', accessor: 'p_n_ope'}, {Header: 'Subestação', accessor: 'sub'}
+      ]},
+    ], []);
+
+    const columnLinks = {
+        'pn_con_1': { targetTab: 'postes', filterColumn: 'COD_ID' },
+        'pn_con_2': { targetTab: 'postes', filterColumn: 'COD_ID' },
+    };
+
+    const activeTabConfig = tabsConfig.find(t => t.id === activeTab);
+    const { data, isLoading, error, refetch } = useFetchData(activeTabConfig.tableName, { filters: localFilter });
+
+    const handleTabClick = (tabId) => {
+        setActiveTab(tabId);
+        setLocalFilter(null);
+    }
+    
+    const handleAddNew = () => {
+        setModalState({
+            isOpen: true,
+            mode: 'add',
+            asset: null,
+            tableName: activeTabConfig.tableName,
+            columns: activeTabConfig.columns,
+            refetch
+        });
+    };
+
+    const handleEdit = (asset) => {
+        setModalState({
+            isOpen: true,
+            mode: 'edit',
+            asset: asset,
+            tableName: activeTabConfig.tableName,
+            columns: activeTabConfig.columns,
+            refetch
+        });
+    };
+
+    const handleDelete = async (asset) => {
+        if (window.confirm(`Tem certeza que deseja apagar o ativo ${asset.COD_ID || asset.cod_id || asset.OBJECTID || asset.id}?`)) {
+            const idKey = asset.id ? 'id' : 'OBJECTID';
+            const idValue = asset[idKey];
+            const { error } = await supabase.from(activeTabConfig.tableName).delete().eq(idKey, idValue);
+            if (error) {
+                alert(`Erro ao apagar: ${error.message}`);
+            } else {
+                alert('Ativo apagado com sucesso!');
+                refetch();
+            }
+        }
+    };
+    
+    const handleSave = () => {
+        setModalState({ isOpen: false, mode: 'add', asset: null, tableName: '', columns: [], refetch: () => {} });
+        refetch();
+    };
+
+    const handleCancel = () => {
+        setModalState({ isOpen: false, mode: 'add', asset: null, tableName: '', columns: [], refetch: () => {} });
+    };
+
+    return (
+        <div className="content-area">
+            <div className="page-header">
+                <div>
+                    <h3>Inventário de Ativos (BDGD)</h3>
+                    <p>Navegue e gerencie os diferentes tipos de ativos da rede da distribuidora.</p>
+                </div>
+                 <button className="btn-primary" onClick={handleAddNew}>
+                    <Icon path={ICONS.add} />
+                    Adicionar Novo Ativo
+                </button>
+            </div>
+            <Card>
+                <div className="tabs-nav">
+                    {tabsConfig.map(tab => (
+                        <button key={tab.id} onClick={() => handleTabClick(tab.id)} className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}>
+                            {tab.label}
+                        </button>
                     ))}
                 </div>
+                <div className="tab-content">
+                    {localFilter && <button className="btn-secondary" style={{marginBottom: '1rem'}} onClick={() => setLocalFilter(null)}>Limpar filtro e mostrar todos</button>}
+                    <Table 
+                        columns={activeTabConfig.columns} 
+                        data={data}
+                        isLoading={isLoading}
+                        error={error}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onRowClick={onSelectAssetForMap}
+                        onLinkClick={onNavigateToAsset}
+                        columnLinks={columnLinks}
+                    />
+                </div>
             </Card>
-            <Modal title={`Detalhes do Poste: ${selectedPoste?.COD_ID}`} isOpen={!!selectedPoste} onClose={() => setSelectedPoste(null)}>
-                {selectedPoste && (
-                    <div className="details-grid">
-                       <div className="detail-item"><strong>Status:</strong> {selectedPoste.SIT_ATIV}</div>
-                       <div className="detail-item"><strong>Município:</strong> {selectedPoste.MUN}</div>
-                       <div className="detail-item"><strong>Tipo:</strong> {selectedPoste.TIP_UNID}</div>
-                       <div className="detail-item"><strong>Operadora:</strong> {selectedPoste.P_N_OPE}</div>
-                    </div>
+            <Modal
+                isOpen={modalState.isOpen}
+                onClose={handleCancel}
+                title={modalState.mode === 'edit' ? `Editar Ativo: ${modalState.asset?.COD_ID || modalState.asset?.cod_id}` : `Adicionar Novo Ativo`}
+            >
+                <AssetForm
+                    asset={modalState.asset}
+                    columns={modalState.columns}
+                    tableName={modalState.tableName}
+                    onSave={handleSave}
+                    onCancel={handleCancel}
+                />
+                 {modalState.mode === 'edit' && modalState.tableName === ASSET_TABLE_NAMES.POSTES && modalState.asset && (
+                    <RelatedSegments asset={modalState.asset} />
                 )}
             </Modal>
         </div>
     );
 };
 
+const OperatorDetails = ({ municipio, selectedUf }) => {
+    const { 
+        data: operatorData, 
+        isLoading, 
+        error 
+    } = useFetchRpc('get_operator_details_by_municipio', { 
+        municipio_param: municipio.Municipio,
+        uf_param: selectedUf 
+    });
 
-// --- Gestão de Ativos ---
-const GestaoInventarioPostes = ({ navigateTo }) => {
-    const columns = [
-        { header: "COD ID", key: "COD_ID" },
-        { header: "Status", key: "SIT_ATIV" },
-        { header: "Tipo", key: "TIP_UNID" },
-        { header: "Município", key: "MUN" },
-        { header: "Data Construção", key: "DAT_CON" },
-    ];
+    const columns = useMemo(() => [
+        { Header: 'Operadora', accessor: 'Empresa' },
+        { Header: 'Acessos', accessor: 'Acessos', Cell: (row) => (row.Acessos ? row.Acessos.toLocaleString() : '0') },
+    ], []);
+    
+    if (isLoading) return <LoadingSpinner message="Carregando operadoras..." />;
+    if (error) return <ErrorMessage title="Erro ao carregar operadoras" errorObj={error} />;
 
-    const handleRowClick = (row) => {
-        navigateTo(`ativos/inventario/${row.COD_ID}`);
+
+    return (
+        <>
+            <h4 className="card-title">Operadoras em {municipio.Municipio}</h4>
+            <Table columns={columns} data={operatorData} isLoading={isLoading} error={error} />
+        </>
+    );
+};
+
+const GeminiChatPrototype = ({ municipio }) => {
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(scrollToBottom, [messages]);
+
+    useEffect(() => {
+        if (municipio) {
+            setMessages([{
+                sender: 'ai',
+                text: `Olá! Sou seu assistente de IA. Faça uma pergunta sobre os dados de ${municipio.Municipio}.`
+            }]);
+        }
+    }, [municipio]);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!input.trim() || isLoading) return;
+
+        const userMessage = { sender: 'user', text: input };
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+        setIsLoading(true);
+
+        setTimeout(() => {
+            const aiResponse = {
+                sender: 'ai',
+                text: 'Esta é uma resposta simulada da IA. A funcionalidade completa para interagir com o Gemini será implementada em breve.'
+            };
+            setMessages(prev => [...prev, aiResponse]);
+            setIsLoading(false);
+        }, 1500);
     };
 
     return (
-        <div>
-            <PageHeader title="Inventário de Postes" subtitle="Visualize e gerencie todos os postes cadastrados." />
-            <Table columns={columns} data={tabelaPostes} onRowClick={handleRowClick} clickable={true} />
-        </div>
-    );
-};
-
-const DetalhesPoste = ({ posteId }) => {
-    const posteIdNum = parseInt(posteId, 10);
-    const poste = tabelaPostes.find(p => p.COD_ID === posteIdNum);
-    const detalhes = tabelaDetalhesPostes.find(d => d.COD_ID === posteIdNum);
-    const ocupacao = tabelaTelecomOcupacao.filter(o => o.COD_ID === posteIdNum);
-    
-    if (!poste) return <PageHeader title="Poste não encontrado" />;
-
-    const tabs = [
-        { 
-            label: "Dados Gerais e Localização", 
-            content: (
-                <div className="details-grid">
-                    <div className="detail-item"><strong>COD ID:</strong> {poste.COD_ID}</div>
-                    <div className="detail-item"><strong>Status:</strong> {poste.SIT_ATIV}</div>
-                    <div className="detail-item"><strong>Município:</strong> {poste.MUN}</div>
-                    <div className="detail-item"><strong>Coordenada X:</strong> {poste.X.toFixed(6)}</div>
-                    <div className="detail-item"><strong>Coordenada Y:</strong> {poste.Y.toFixed(6)}</div>
-                    <div className="detail-item"><strong>Data Construção:</strong> {poste.DAT_CON}</div>
-                    <div className="detail-item"><strong>Tipo Unidade:</strong> {poste.TIP_UNID}</div>
-                    <div className="detail-item"><strong>Área de Locação:</strong> {poste.ARE_LOC}</div>
-                    <div className="detail-item"><strong>Conjunto:</strong> {poste.CONJ}</div>
-                    <div className="detail-item"><strong>Subestação:</strong> {poste.SUB}</div>
-                    <div className="detail-item"><strong>Circuito (CTMT):</strong> {poste.CTMT}</div>
-                    <div className="detail-item"><strong>Descrição:</strong> {poste.DESCR}</div>
-                </div>
-            )
-        },
-        { 
-            label: "Características Técnicas", 
-            content: (
-                <div className="details-grid">
-                    <div className="detail-item"><strong>Potência Nominal:</strong> {poste.POT_NOM} kVA</div>
-                    <div className="detail-item"><strong>Fase de Conexão:</strong> {poste.FAS_CON}</div>
-                    <div className="detail-item"><strong>Operadora (P_N_OPE):</strong> {detalhes?.P_N_OPE}</div>
-                    <div className="detail-item"><strong>Capacidade Elos:</strong> {detalhes?.CAP_ELO}</div>
-                    <div className="detail-item"><strong>Corrente Nominal:</strong> {detalhes?.COR_NOM}</div>
-                    <div className="detail-item"><strong>TLCD:</strong> {detalhes?.TLCD ? 'Sim' : 'Não'}</div>
-                    <div className="detail-item"><strong>Unidade Transformadora:</strong> {poste.UNI_TR_AT}</div>
-                    <div className="detail-item"><strong>PAC 1:</strong> {poste.PAC_1}</div>
-                    <div className="detail-item"><strong>PAC 2:</strong> {poste.PAC_2}</div>
-                    <div className="detail-item"><strong>Banco:</strong> {poste.BANC}</div>
-                    <div className="detail-item"><strong>Posição:</strong> {poste.POS}</div>
-                </div>
-            )
-        },
-        { 
-            label: `Ocupação Telecom (${ocupacao.length})`, 
-            content: (
-                 <Table 
-                    columns={[
-                        {header: 'ISP (PN_CON_1)', key: 'PN_CON_1'},
-                        {header: 'Situação Contrato', key: 'SITCONT'},
-                        {header: 'Componente', key: 'COMP'},
-                        {header: 'Cód. Operadora', key: 'CT_COD_OP'},
-                        {header: 'Descrição', key: 'DESCR'}
-                    ]}
-                    data={ocupacao}
+        <div className="chat-container">
+            <h4 className="card-title">Análise com IA (Protótipo)</h4>
+            <div className="chat-messages">
+                {messages.map((msg, index) => (
+                    <div key={index} className={`message ${msg.sender}`}>
+                        <p>{msg.text}</p>
+                    </div>
+                ))}
+                {isLoading && (
+                    <div className="message ai">
+                        <div className="typing-indicator">
+                            <span></span><span></span><span></span>
+                        </div>
+                    </div>
+                )}
+                 <div ref={messagesEndRef} />
+            </div>
+            <form onSubmit={handleSubmit} className="chat-input-form">
+                <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Pergunte sobre os dados..."
+                    disabled={isLoading}
+                    aria-label="Faça uma pergunta sobre os dados"
                 />
-            )
-        },
-    ];
-    
-    return (
-        <div>
-            <PageHeader title={`Detalhes do Poste: ${posteId}`} subtitle={`Localizado em ${poste.MUN} - ${poste.SIT_ATIV}`} />
-            <Card>
-                <Tabs items={tabs} />
-            </Card>
+                <button type="submit" disabled={isLoading} aria-label="Enviar pergunta">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                </button>
+            </form>
         </div>
     );
 };
+
+
+const AcessosModule = () => {
+    const ufs = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
+    const [selectedUf, setSelectedUf] = useState('SP');
+    const [selectedMunicipio, setSelectedMunicipio] = useState(null);
+    
+    const { 
+        data: summaryData, 
+        isLoading: isLoadingSummary, 
+        error: errorSummary 
+    } = useFetchRpc('get_municipio_summary', { uf_param: selectedUf });
+    
+    useEffect(() => {
+        setSelectedMunicipio(null);
+    }, [selectedUf]);
+    
+    const summaryTableColumns = useMemo(() => [
+        { Header: 'Município', accessor: 'Municipio' },
+        { Header: 'Operadoras', accessor: 'numOperadoras', Cell: (row) => row.numOperadoras.toLocaleString() },
+        { Header: 'Total de Acessos', accessor: 'totalAcessos', Cell: (row) => (row.totalAcessos ? row.totalAcessos.toLocaleString() : '0') },
+    ], []);
+
+    return (
+        <div className="content-area">
+            <div className="page-header">
+                <div>
+                    <h3>Acessos por Município</h3>
+                    <p>Análise da quantidade de acessos e operadoras por município.</p>
+                </div>
+                <div className="uf-filter-container">
+                    <label htmlFor="uf-select">Selecione uma UF:</label>
+                    <select id="uf-select" value={selectedUf} onChange={e => setSelectedUf(e.target.value)}>
+                        {ufs.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                    </select>
+                </div>
+            </div>
+            
+            <div className="acessos-layout">
+                <Card className="acessos-panel">
+                    {errorSummary && <ErrorMessage title="Erro ao carregar dados" errorObj={errorSummary} />}
+                    {!errorSummary && (
+                         <Table 
+                            columns={summaryTableColumns} 
+                            data={summaryData}
+                            isLoading={isLoadingSummary}
+                            onRowClick={setSelectedMunicipio}
+                        />
+                    )}
+                </Card>
+                
+                {selectedMunicipio && (
+                    <>
+                        <Card className="acessos-panel" key={`${selectedMunicipio.Municipio}-details`}>
+                            <OperatorDetails municipio={selectedMunicipio} selectedUf={selectedUf} />
+                        </Card>
+                        <Card className="acessos-panel chat-panel" key={`${selectedMunicipio.Municipio}-chat`}>
+                           <GeminiChatPrototype municipio={selectedMunicipio} />
+                        </Card>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const PlaceholderModule = ({ title, description }) => (
+    <div className="content-area">
+        <div className="page-header"><h3>{title}</h3></div>
+        <Card>
+            <div style={{textAlign: 'center', padding: '2rem'}}>
+                <Icon path={ICONS.info} />
+                <p style={{marginTop: '1rem', fontSize: '1.1rem', color: 'var(--dark-gray)'}}>{description}</p>
+            </div>
+        </Card>
+    </div>
+);
 
 
 // ===================================================================================
-// ROTEADOR E APLICAÇÃO PRINCIPAL
+// COMPONENTE PRINCIPAL DA APLICAÇÃO
 // ===================================================================================
 
 const App = () => {
-    // Roteamento baseado em estado para evitar problemas de "conexão recusada" no ambiente.
-    const [currentView, setCurrentView] = useState({ path: 'dashboard/visao-geral', param: null });
+    const [activeModule, setActiveModule] = useState('dashboard');
+    const [selectedAssetForMap, setSelectedAssetForMap] = useState(null);
+    const [isMapPanelOpen, setIsMapPanelOpen] = useState(false);
+    const [activeAssetFilter, setActiveAssetFilter] = useState(null);
+    const supabaseClient = useSupabase();
 
-    const navigateTo = (fullPath) => {
-        const [main, sub, param] = fullPath.split('/');
-        setCurrentView({ path: `${main}/${sub}`, param });
-    };
+    if (!supabaseClient) {
+        return <ConfigError error={{ message: "As credenciais do Supabase (URL e Chave) não foram definidas no arquivo index.tsx."}} />;
+    }
 
-    const renderPage = () => {
-        const { path, param } = currentView;
-        
-        if (path === 'ativos/inventario' && param) {
-            return <DetalhesPoste posteId={param} />;
-        }
-        
-        switch (path) {
-            case 'dashboard/visao-geral':
-                return <DashboardVisaoGeral />;
-            case 'gis/mapa-interativo':
-                return <GisMapaInterativo />;
-            case 'ativos/inventario':
-                return <GestaoInventarioPostes navigateTo={navigateTo} />;
-            
-            // Placeholder for other pages
-            case 'dashboard/visao-financeira': return <PlaceholderPage title="Visão Financeira" />;
-            case 'dashboard/alertas-pendentes': return <PlaceholderPage title="Alertas Pendentes" />;
-            case 'gis/gestao-camadas': return <PlaceholderPage title="Gestão de Camadas" />;
-            case 'gis/analise-dados': return <PlaceholderPage title="Análise de Dados" />;
-            case 'ativos/risco': return <PlaceholderPage title="Análise de Risco" />;
-            case 'comercial/exploracao': return <PlaceholderPage title="Exploração Comercial" />;
-            case 'comercial/alertas': return <PlaceholderPage title="Alertas Gerais" />;
-            case 'comercial/negocios': return <PlaceholderPage title="Novos Negócios" />;
-            case 'comunicacao/regularizacao': return <PlaceholderPage title="Regularização de ISPs" />;
-            case 'comunicacao/leilao': return <PlaceholderPage title="Leilão de Excedentes" />;
-            case 'config/usuarios': return <PlaceholderPage title="Usuários e Permissões" />;
-            case 'config/integracao': return <PlaceholderPage title="Dados e Integração" />;
-            case 'config/empresa': return <PlaceholderPage title="Empresa" />;
-            case 'config/contratos': return <PlaceholderPage title="Gestão de Contratos" />;
-            case 'relatorios/inadimplencia': return <PlaceholderPage title="Relatórios de Inadimplência" />;
-            case 'relatorios/ocupacao': return <PlaceholderPage title="Relatórios de Ocupação" />;
-            case 'relatorios/personalizados': return <PlaceholderPage title="Relatórios Personalizados" />;
-            
-            default:
-                // Renderiza a página padrão se a rota for desconhecida
-                return <DashboardVisaoGeral />;
+    const handleSelectAssetForMap = useCallback((asset) => {
+        setSelectedAssetForMap(asset);
+        setIsMapPanelOpen(true);
+    }, []);
+
+    const handleCloseMapPanel = useCallback(() => {
+        setIsMapPanelOpen(false);
+    }, []);
+
+    const handleNavigateToAsset = useCallback((linkConfig, value) => {
+        setActiveModule('assets');
+        setActiveAssetFilter({
+            tabId: linkConfig.targetTab,
+            filter: { column: linkConfig.filterColumn, value: value }
+        });
+    }, []);
+
+    const handleFilterConsumed = useCallback(() => {
+        setActiveAssetFilter(null);
+    }, []);
+
+    const renderModule = () => {
+        switch (activeModule) {
+            case 'dashboard': return <DashboardModule onSelectAssetForMap={handleSelectAssetForMap} />;
+            case 'gis': return <GisModule />;
+            case 'assets': return <AssetsModule onSelectAssetForMap={handleSelectAssetForMap} onNavigateToAsset={handleNavigateToAsset} activeFilter={activeAssetFilter} onFilterConsumed={handleFilterConsumed} />;
+            case 'acessos': return <AcessosModule />;
+            case 'alerts': return <PlaceholderModule title="Alertas de Inconformidade" description="Este módulo exibirá alertas sobre irregularidades, como ISPs sem contrato, inadimplência e projetos defasados." />;
+            case 'business': return <PlaceholderModule title="Novos Negócios" description="Este módulo apresentará oportunidades de negócio, como serviços de utilidade pública (iluminação, sinalização), IoT e conectividade adicional." />;
+            case 'comms': return <PlaceholderModule title="Comunicação e Regularização" description="Ferramentas para gestão de ISPs (com ou sem contrato), acompanhamento de SLAs e regularização de ocupação." />;
+            case 'admin': return <PlaceholderModule title="Administração" description="Configurações do sistema, gestão de usuários e permissões estarão disponíveis aqui." />;
+            default: return <DashboardModule onSelectAssetForMap={handleSelectAssetForMap} />;
         }
     };
+
+    const navItems = [
+        { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard },
+        { id: 'gis', label: 'GIS (ANEEL BDGD)', icon: ICONS.gis },
+        { id: 'assets', label: 'Ativos', icon: ICONS.assets },
+        { id: 'acessos', label: 'Acessos/Município', icon: ICONS.network },
+        { id: 'alerts', label: 'Alertas', icon: ICONS.alert },
+        { id: 'business', label: 'Novos Negócios', icon: ICONS.business },
+        { id: 'comms', label: 'Comunicação', icon: ICONS.comms },
+        { id: 'admin', label: 'Admin', icon: ICONS.admin }
+    ];
 
     return (
-        <Layout currentPath={currentView.path} navigateTo={navigateTo}>
-            {renderPage()}
-        </Layout>
+        <div className="app-layout">
+            <header className="app-header">
+                <div className="header-logo"><h1>InfraGrid</h1></div>
+                <nav className="header-nav">
+                    <ul>
+                        {navItems.map(item => (
+                            <li key={item.id} className={activeModule === item.id ? 'active' : ''}>
+                                <a href="#" onClick={(e) => { e.preventDefault(); setActiveModule(item.id); }}>
+                                    <Icon path={item.icon} />
+                                    {item.label}
+                                  </a>
+                            </li>
+                        ))}
+                    </ul>
+                </nav>
+            </header>
+            <main className="main-content">
+                {renderModule()}
+            </main>
+            <SideMapPanel asset={selectedAssetForMap} isOpen={isMapPanelOpen} onClose={handleCloseMapPanel} />
+        </div>
     );
 };
 
